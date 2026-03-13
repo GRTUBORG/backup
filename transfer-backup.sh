@@ -3,12 +3,10 @@
 set -euo pipefail
 
 SOURCE_PORT="${SOURCE_PORT:-22}"
-DEST_PORT="${DEST_PORT:-22}"
 SOURCE_SSH_KEY_PATH="${SOURCE_SSH_KEY_PATH:-${SSH_KEY_PATH:-}}"
-DEST_SSH_KEY_PATH="${DEST_SSH_KEY_PATH:-${SSH_KEY_PATH:-}}"
-LOCAL_TMP_DIR="${LOCAL_TMP_DIR:-/tmp/backup-transfer}"
+LOCAL_ARCHIVE_DIR="${LOCAL_ARCHIVE_DIR:-/tmp/backup-transfer}"
 EXTRACT_SUBDIR="${EXTRACT_SUBDIR:-}"
-KEEP_REMOTE_ARCHIVE="${KEEP_REMOTE_ARCHIVE:-true}"
+KEEP_LOCAL_ARCHIVE="${KEEP_LOCAL_ARCHIVE:-true}"
 
 log() {
   printf "\033[1;34m[INFO]\033[0m %s\n" "$1"
@@ -42,24 +40,14 @@ require_var() {
 
 build_ssh_opts() {
   SOURCE_SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -P "${SOURCE_PORT}")
-  DEST_SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -P "${DEST_PORT}")
-
-  SOURCE_EXEC_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -p "${SOURCE_PORT}")
-  DEST_EXEC_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -p "${DEST_PORT}")
 
   if [[ -n "${SOURCE_SSH_KEY_PATH}" ]]; then
     SOURCE_SSH_OPTS+=( -i "${SOURCE_SSH_KEY_PATH}" )
-    SOURCE_EXEC_OPTS+=( -i "${SOURCE_SSH_KEY_PATH}" )
-  fi
-
-  if [[ -n "${DEST_SSH_KEY_PATH}" ]]; then
-    DEST_SSH_OPTS+=( -i "${DEST_SSH_KEY_PATH}" )
-    DEST_EXEC_OPTS+=( -i "${DEST_SSH_KEY_PATH}" )
   fi
 }
 
 ensure_dependencies() {
-  for cmd in scp ssh basename mktemp; do
+  for cmd in scp basename mkdir; do
     if ! command -v "${cmd}" >/dev/null 2>&1; then
       error "Не найдена обязательная утилита: ${cmd}"
       exit 1
@@ -68,70 +56,57 @@ ensure_dependencies() {
 }
 
 download_archive() {
-  local filename
-  filename="$(basename "${SOURCE_ARCHIVE_PATH}")"
+  ARCHIVE_NAME="$(basename "${SOURCE_ARCHIVE_PATH}")"
+  LOCAL_ARCHIVE_PATH="${LOCAL_ARCHIVE_DIR%/}/${ARCHIVE_NAME}"
 
-  mkdir -p "${LOCAL_TMP_DIR}"
-  LOCAL_ARCHIVE_PATH="$(mktemp "${LOCAL_TMP_DIR}/incoming_XXXXXX_${filename}")"
+  mkdir -p "${LOCAL_ARCHIVE_DIR}"
 
   log "Скачиваю архив с бэкап-сервера: ${SOURCE_USER}@${SOURCE_HOST}:${SOURCE_ARCHIVE_PATH}"
   scp "${SOURCE_SSH_OPTS[@]}" "${SOURCE_USER}@${SOURCE_HOST}:${SOURCE_ARCHIVE_PATH}" "${LOCAL_ARCHIVE_PATH}"
-  success "Архив скачан локально: ${LOCAL_ARCHIVE_PATH}"
-}
-
-upload_archive() {
-  REMOTE_ARCHIVE_NAME="$(basename "${SOURCE_ARCHIVE_PATH}")"
-  REMOTE_ARCHIVE_PATH="${DEST_DIR%/}/${REMOTE_ARCHIVE_NAME}"
-
-  log "Создаю директорию на резервном сервере: ${DEST_DIR}"
-  ssh "${DEST_EXEC_OPTS[@]}" "${DEST_USER}@${DEST_HOST}" "mkdir -p '${DEST_DIR}'"
-
-  log "Загружаю архив на резервный сервер: ${DEST_USER}@${DEST_HOST}:${REMOTE_ARCHIVE_PATH}"
-  scp "${DEST_SSH_OPTS[@]}" "${LOCAL_ARCHIVE_PATH}" "${DEST_USER}@${DEST_HOST}:${REMOTE_ARCHIVE_PATH}"
-  success "Архив загружен на резервный сервер"
+  success "Архив скачан на резервный сервер: ${LOCAL_ARCHIVE_PATH}"
 }
 
 extract_archive() {
   local extract_to
   extract_to="${DEST_DIR}"
 
+  mkdir -p "${DEST_DIR}"
+
   if [[ -n "${EXTRACT_SUBDIR}" ]]; then
     extract_to="${DEST_DIR%/}/${EXTRACT_SUBDIR}"
-    ssh "${DEST_EXEC_OPTS[@]}" "${DEST_USER}@${DEST_HOST}" "mkdir -p '${extract_to}'"
+    mkdir -p "${extract_to}"
   fi
 
-  log "Распаковываю архив на резервном сервере в: ${extract_to}"
+  log "Распаковываю архив локально в: ${extract_to}"
 
-  case "${REMOTE_ARCHIVE_NAME}" in
+  case "${ARCHIVE_NAME}" in
     *.zip)
-      ssh "${DEST_EXEC_OPTS[@]}" "${DEST_USER}@${DEST_HOST}" "command -v unzip >/dev/null 2>&1 || { echo 'unzip не установлен на резервном сервере' >&2; exit 1; }; unzip -o '${REMOTE_ARCHIVE_PATH}' -d '${extract_to}'"
+      command -v unzip >/dev/null 2>&1 || {
+        error "unzip не установлен на резервном сервере"
+        exit 1
+      }
+      unzip -o "${LOCAL_ARCHIVE_PATH}" -d "${extract_to}"
       ;;
     *.tar.gz|*.tgz)
-      ssh "${DEST_EXEC_OPTS[@]}" "${DEST_USER}@${DEST_HOST}" "tar -xzf '${REMOTE_ARCHIVE_PATH}' -C '${extract_to}'"
+      tar -xzf "${LOCAL_ARCHIVE_PATH}" -C "${extract_to}"
       ;;
     *.tar)
-      ssh "${DEST_EXEC_OPTS[@]}" "${DEST_USER}@${DEST_HOST}" "tar -xf '${REMOTE_ARCHIVE_PATH}' -C '${extract_to}'"
+      tar -xf "${LOCAL_ARCHIVE_PATH}" -C "${extract_to}"
       ;;
     *)
-      error "Неподдерживаемый формат архива: ${REMOTE_ARCHIVE_NAME}"
+      error "Неподдерживаемый формат архива: ${ARCHIVE_NAME}"
       error "Поддерживаются: .zip, .tar.gz, .tgz, .tar"
       exit 1
       ;;
   esac
 
-  success "Архив распакован на резервном сервере"
+  success "Архив распакован"
 }
 
 cleanup() {
-  if [[ -n "${LOCAL_ARCHIVE_PATH:-}" && -f "${LOCAL_ARCHIVE_PATH}" ]]; then
+  if [[ "${KEEP_LOCAL_ARCHIVE}" != "true" && -f "${LOCAL_ARCHIVE_PATH}" ]]; then
     rm -f "${LOCAL_ARCHIVE_PATH}"
-    log "Удалён временный локальный файл: ${LOCAL_ARCHIVE_PATH}"
-  fi
-
-  if [[ "${KEEP_REMOTE_ARCHIVE}" != "true" ]]; then
-    log "Удаляю архив с резервного сервера: ${REMOTE_ARCHIVE_PATH}"
-    ssh "${DEST_EXEC_OPTS[@]}" "${DEST_USER}@${DEST_HOST}" "rm -f '${REMOTE_ARCHIVE_PATH}'"
-    success "Архив удалён с резервного сервера"
+    log "Удалён локальный архив: ${LOCAL_ARCHIVE_PATH}"
   fi
 }
 
@@ -141,19 +116,16 @@ main() {
   require_var "SOURCE_USER"
   require_var "SOURCE_HOST"
   require_var "SOURCE_ARCHIVE_PATH"
-  require_var "DEST_USER"
-  require_var "DEST_HOST"
   require_var "DEST_DIR"
 
   ensure_dependencies
   build_ssh_opts
 
   download_archive
-  upload_archive
   extract_archive
   cleanup
 
-  success "Готово: архив перенесён и распакован"
+  success "Готово: архив скачан на резервный сервер и распакован"
 }
 
 main "$@"
