@@ -24,7 +24,7 @@
 > Подходит, если хотите «красиво и быстро» без ручного редактирования файлов.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/GRTUBORG/backup/main/install-backup.sh | \
+curl -fsSL https://raw.githubusercontent.com/GRTUBORG/backup/refs/heads/master/install-backup.sh | \
 sudo REMOTE_USER=root \
 REMOTE_HOST=1.2.3.4 \
 WATCH_DIR=/root/node \
