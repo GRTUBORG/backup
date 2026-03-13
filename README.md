@@ -13,14 +13,71 @@
 2. При любом изменении создаётся архив всей папки.
 3. Архив отправляется на резервный сервер через `scp`.
 4. Локально хранятся только **3 последних архива**.
+5. Если папки на резервном сервере нет — установщик создаёт её автоматически.
 
 Скрипт запускается как `systemd`-сервис и работает постоянно.
 
 ---
 
+## Установка в одну команду (рекомендуется)
+
+> Подходит, если хотите «красиво и быстро» без ручного редактирования файлов.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/GRTUBORG/backup/main/install-backup.sh | \
+sudo REMOTE_USER=root \
+REMOTE_HOST=1.2.3.4 \
+WATCH_DIR=/root/node \
+LOCAL_BACKUP_DIR=/root/node_backups \
+REMOTE_DIR=/root/backup_node/node-1 \
+REMOTE_PORT=22 \
+bash
+```
+
+Если нужен нестандартный ключ, добавьте перед `bash` параметр:
+
+```bash
+SSH_KEY_PATH=/root/.ssh/id_ed25519
+```
+
+Скрипт:
+
+* установит зависимости
+* создаст локальную папку для архивов
+* создаст удалённую папку на резервном сервере через SSH
+* проверит, что SSH-авторизация настроена без пароля (по ключу)
+* создаст и запустит `systemd` сервис
+
+---
+
+## Классическая установка через `.env`
+
+Клонируйте репозиторий:
+
+```bash
+git clone https://github.com/GRTUBORG/backup
+cd backup
+```
+
+Создайте конфигурационный файл:
+
+```bash
+cp env.example .env
+nano .env
+```
+
+После этого запустите установку:
+
+```bash
+chmod +x install-backup.sh
+sudo ./install-backup.sh
+```
+
+---
+
 ## Структура репозитория
 
-```
+```text
 backup
 │
 ├── install-backup.sh
@@ -28,111 +85,60 @@ backup
 └── README.md
 ```
 
-**install-backup.sh**
-Скрипт установки резервного копирования.
-
-**env.example**
-Шаблон конфигурации.
-
----
-
-## Требования
-
-Сервер должен соответствовать следующим условиям:
-
-* Linux (рекомендуется Ubuntu / Debian)
-* доступ `root`
-* установлен `systemd`
-* SSH-доступ к резервному серверу
-
----
-
-## Установка
-
-Клонируйте репозиторий:
-
-```
-git clone https://github.com/GRTUBORG/backup
-cd backup
-```
-
-Создайте конфигурационный файл:
-
-```
-cp env.example .env
-```
-
-Отредактируйте параметры:
-
-```
-nano .env
-```
-
-После этого запустите установку:
-
-```
-chmod +x install-backup.sh
-./install-backup.sh
-```
-
-Скрипт автоматически:
-
-* установит необходимые пакеты
-* создаст скрипт отслеживания изменений
-* создаст `systemd` сервис
-* запустит его
-
 ---
 
 ## Конфигурация
 
-Файл `.env` содержит параметры системы.
+Файл `.env` (или переменные окружения) содержит параметры системы.
 
 Пример:
 
-```
+```env
 REMOTE_USER=root
 REMOTE_HOST=1.2.3.4
-NODE_NAME=node-1
-
 WATCH_DIR=/root/node
 LOCAL_BACKUP_DIR=/root/node_backups
 REMOTE_DIR=/root/backup_node/node-1
+REMOTE_PORT=22
+# SSH_KEY_PATH=/root/.ssh/id_ed25519
 ```
 
 Описание параметров:
 
-**REMOTE_USER**
-Пользователь на резервном сервере.
-
-**REMOTE_HOST**
-IP или домен резервного сервера.
-
-**NODE_NAME**
-Имя ноды (используется для структуры папок).
-
-**WATCH_DIR**
-Директория, за которой следит система.
-
-**LOCAL_BACKUP_DIR**
-Папка для локального хранения архивов.
-
-**REMOTE_DIR**
-Директория на резервном сервере.
+* **REMOTE_USER** — пользователь на резервном сервере.
+* **REMOTE_HOST** — IP или домен резервного сервера.
+* **WATCH_DIR** — директория, за которой следит система.
+* **LOCAL_BACKUP_DIR** — папка для локального хранения архивов.
+* **REMOTE_DIR** — директория на резервном сервере.
+* **REMOTE_PORT** *(опционально)* — SSH-порт (по умолчанию `22`).
+* **SSH_KEY_PATH** *(опционально)* — путь до приватного SSH-ключа.
 
 ---
+
+
+## Важно про SSH-доступ
+
+Установщик и `systemd`-watcher работают без интерактивного ввода пароля.
+Поэтому на резервном сервере должен быть настроен вход по SSH-ключу для `REMOTE_USER`.
+
+Пример подготовки ключа:
+
+```bash
+ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N ""
+ssh-copy-id -p 22 root@1.2.3.4
+```
 
 ## Проверка работы
 
 Проверьте статус сервиса:
 
-```
+```bash
 systemctl status node-backup-watcher
 ```
 
 Если всё настроено правильно, статус будет:
 
-```
+```text
 active (running)
 ```
 
@@ -142,7 +148,7 @@ active (running)
 
 Создайте тестовый файл:
 
-```
+```bash
 touch /root/node/testfile.txt
 ```
 
@@ -157,18 +163,18 @@ touch /root/node/testfile.txt
 
 Перезапуск:
 
-```
+```bash
 systemctl restart node-backup-watcher
 ```
 
 Остановка:
 
-```
+```bash
 systemctl stop node-backup-watcher
 ```
 
 Просмотр логов:
 
-```
+```bash
 journalctl -u node-backup-watcher -f
 ```
