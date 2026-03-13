@@ -38,6 +38,20 @@ require_var() {
   fi
 }
 
+install_dependencies() {
+  if ! command -v apt-get >/dev/null 2>&1; then
+    error "apt-get не найден. Установите вручную: openssh-client zip unzip tar"
+    exit 1
+  fi
+
+  log "Обновляю индекс пакетов (apt-get update)"
+  apt-get update -y
+
+  log "Устанавливаю зависимости: openssh-client zip unzip tar"
+  DEBIAN_FRONTEND=noninteractive apt-get install -y openssh-client zip unzip tar
+  success "Зависимости установлены"
+}
+
 build_ssh_opts() {
   SOURCE_SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -P "${SOURCE_PORT}")
 
@@ -118,6 +132,7 @@ main() {
   require_var "SOURCE_ARCHIVE_PATH"
   require_var "DEST_DIR"
 
+  install_dependencies
   ensure_dependencies
   build_ssh_opts
 
