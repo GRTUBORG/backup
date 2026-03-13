@@ -30,7 +30,14 @@ REMOTE_HOST=1.2.3.4 \
 WATCH_DIR=/root/node \
 LOCAL_BACKUP_DIR=/root/node_backups \
 REMOTE_DIR=/root/backup_node/node-1 \
+REMOTE_PORT=22 \
 bash
+```
+
+Если нужен нестандартный ключ, добавьте перед `bash` параметр:
+
+```bash
+SSH_KEY_PATH=/root/.ssh/id_ed25519
 ```
 
 Скрипт:
@@ -38,6 +45,7 @@ bash
 * установит зависимости
 * создаст локальную папку для архивов
 * создаст удалённую папку на резервном сервере через SSH
+* проверит, что SSH-авторизация настроена без пароля (по ключу)
 * создаст и запустит `systemd` сервис
 
 ---
@@ -91,6 +99,8 @@ REMOTE_HOST=1.2.3.4
 WATCH_DIR=/root/node
 LOCAL_BACKUP_DIR=/root/node_backups
 REMOTE_DIR=/root/backup_node/node-1
+REMOTE_PORT=22
+# SSH_KEY_PATH=/root/.ssh/id_ed25519
 ```
 
 Описание параметров:
@@ -100,8 +110,23 @@ REMOTE_DIR=/root/backup_node/node-1
 * **WATCH_DIR** — директория, за которой следит система.
 * **LOCAL_BACKUP_DIR** — папка для локального хранения архивов.
 * **REMOTE_DIR** — директория на резервном сервере.
+* **REMOTE_PORT** *(опционально)* — SSH-порт (по умолчанию `22`).
+* **SSH_KEY_PATH** *(опционально)* — путь до приватного SSH-ключа.
 
 ---
+
+
+## Важно про SSH-доступ
+
+Установщик и `systemd`-watcher работают без интерактивного ввода пароля.
+Поэтому на резервном сервере должен быть настроен вход по SSH-ключу для `REMOTE_USER`.
+
+Пример подготовки ключа:
+
+```bash
+ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N ""
+ssh-copy-id -p 22 root@1.2.3.4
+```
 
 ## Проверка работы
 
