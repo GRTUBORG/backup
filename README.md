@@ -125,8 +125,11 @@ REMOTE_PORT=22
 
 ```bash
 ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N ""
-ssh-copy-id -p 22 root@1.2.3.4
+ssh-copy-id -i /root/.ssh/id_ed25519.pub -p 22 root@1.2.3.4
 ```
+
+Если видите ошибку `ssh-copy-id: ERROR: No identities found`, это значит, что публичный ключ ещё не создан.
+Сначала выполните `ssh-keygen`, затем повторите `ssh-copy-id` с `-i /path/to/key.pub`.
 
 ## Проверка работы
 
