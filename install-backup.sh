@@ -54,58 +54,87 @@ build_ssh_options() {
   fi
 }
 
-print_ssh_setup_hint() {
-  local ssh_user_host="${REMOTE_USER}@${REMOTE_HOST}"
-  local private_key_path="${SSH_KEY_PATH}"
-  local public_key_path=""
+determine_ssh_key_paths() {
+  RESOLVED_SSH_PRIVATE_KEY_PATH="${SSH_KEY_PATH}"
 
-  if [[ -z "${private_key_path}" ]]; then
+  if [[ -z "${RESOLVED_SSH_PRIVATE_KEY_PATH}" ]]; then
     for candidate in "$HOME/.ssh/id_ed25519" "$HOME/.ssh/id_rsa" "$HOME/.ssh/id_ecdsa"; do
       if [[ -f "${candidate}" ]]; then
-        private_key_path="${candidate}"
+        RESOLVED_SSH_PRIVATE_KEY_PATH="${candidate}"
         break
       fi
     done
   fi
 
-  if [[ -n "${private_key_path}" ]]; then
-    public_key_path="${private_key_path}.pub"
-
-    if [[ ! -f "${private_key_path}" ]]; then
-      error "Приватный ключ не найден: ${private_key_path}"
-      error "Создайте ключ: ssh-keygen -t ed25519 -f ${private_key_path} -N \"\""
-      error "После этого загрузите ключ: ssh-copy-id -i ${public_key_path} -p ${REMOTE_PORT} ${ssh_user_host}"
-      return
-    fi
-
-    if [[ ! -f "${public_key_path}" ]]; then
-      error "Публичный ключ не найден: ${public_key_path}"
-      error "Сгенерируйте public key из приватного: ssh-keygen -y -f ${private_key_path} > ${public_key_path}"
-      error "После этого загрузите ключ: ssh-copy-id -i ${public_key_path} -p ${REMOTE_PORT} ${ssh_user_host}"
-      return
-    fi
-
-    error "Найден локальный ключ: ${private_key_path}"
-    error "Добавьте ключ на удалённый сервер: ssh-copy-id -i ${public_key_path} -p ${REMOTE_PORT} ${ssh_user_host}"
-    return
+  if [[ -z "${RESOLVED_SSH_PRIVATE_KEY_PATH}" ]]; then
+    RESOLVED_SSH_PRIVATE_KEY_PATH="$HOME/.ssh/id_ed25519"
   fi
 
-  error "Локальные SSH-ключи не найдены (возможна ошибка ssh-copy-id: No identities found)."
-  error "Создайте ключ: ssh-keygen -t ed25519 -f $HOME/.ssh/id_ed25519 -N \"\""
-  error "Загрузите его на удалённый сервер: ssh-copy-id -i $HOME/.ssh/id_ed25519.pub -p ${REMOTE_PORT} ${ssh_user_host}"
+  RESOLVED_SSH_PUBLIC_KEY_PATH="${RESOLVED_SSH_PRIVATE_KEY_PATH}.pub"
+}
+
+ensure_ssh_key_ready() {
+  determine_ssh_key_paths
+
+  log "Обновляю пакеты перед настройкой SSH-ключа"
+  apt update -y
+
+  mkdir -p "$(dirname "${RESOLVED_SSH_PRIVATE_KEY_PATH}")"
+
+  if [[ ! -f "${RESOLVED_SSH_PRIVATE_KEY_PATH}" ]]; then
+    log "SSH-ключ не найден, создаю: ${RESOLVED_SSH_PRIVATE_KEY_PATH}"
+    ssh-keygen -t ed25519 -f "${RESOLVED_SSH_PRIVATE_KEY_PATH}" -N ""
+  fi
+
+  if [[ ! -f "${RESOLVED_SSH_PUBLIC_KEY_PATH}" ]]; then
+    log "Публичный ключ не найден, создаю: ${RESOLVED_SSH_PUBLIC_KEY_PATH}"
+    ssh-keygen -y -f "${RESOLVED_SSH_PRIVATE_KEY_PATH}" > "${RESOLVED_SSH_PUBLIC_KEY_PATH}"
+  fi
+
+  chmod 600 "${RESOLVED_SSH_PRIVATE_KEY_PATH}"
+  chmod 644 "${RESOLVED_SSH_PUBLIC_KEY_PATH}"
+}
+
+install_ssh_key_on_remote() {
+  log "Пробую добавить SSH-ключ на удалённый сервер через ssh-copy-id"
+  ssh-copy-id -i "${RESOLVED_SSH_PUBLIC_KEY_PATH}" -p "${REMOTE_PORT}" "${REMOTE_USER}@${REMOTE_HOST}"
+}
+
+print_ssh_setup_hint() {
+  error "Если ssh-copy-id не сработал, выполните вручную:"
+  error "  ssh-copy-id -i ${RESOLVED_SSH_PUBLIC_KEY_PATH} -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST}"
 }
 
 verify_ssh_access() {
   log "Проверяю SSH-доступ к ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PORT}"
 
-  if ! ssh -o BatchMode=yes "${SSH_OPTIONS[@]}" "${REMOTE_USER}@${REMOTE_HOST}" "true"; then
-    error "Не удалось подключиться по SSH без пароля."
-    error "Для автозагрузки бэкапов нужен key-based доступ (без ввода пароля)."
+  if ssh -o BatchMode=yes "${SSH_OPTIONS[@]}" "${REMOTE_USER}@${REMOTE_HOST}" "true"; then
+    success "SSH-доступ подтверждён"
+    return
+  fi
+
+  error "Не удалось подключиться по SSH без пароля."
+  error "Для автозагрузки бэкапов нужен key-based доступ (без ввода пароля)."
+
+  ensure_ssh_key_ready
+
+  if [[ -z "${SSH_KEY_PATH}" ]]; then
+    SSH_OPTIONS+=(-i "${RESOLVED_SSH_PRIVATE_KEY_PATH}")
+  fi
+
+  if ! install_ssh_key_on_remote; then
+    error "Автоматическая установка ключа не удалась."
     print_ssh_setup_hint
     exit 1
   fi
 
-  success "SSH-доступ подтверждён"
+  if ! ssh -o BatchMode=yes "${SSH_OPTIONS[@]}" "${REMOTE_USER}@${REMOTE_HOST}" "true"; then
+    error "Ключ добавлен, но SSH-доступ без пароля всё ещё не работает."
+    print_ssh_setup_hint
+    exit 1
+  fi
+
+  success "SSH-доступ подтверждён после автоматической настройки ключа"
 }
 
 prepare_directories() {

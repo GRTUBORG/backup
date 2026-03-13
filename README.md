@@ -128,6 +128,22 @@ ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N ""
 ssh-copy-id -i /root/.ssh/id_ed25519.pub -p 22 root@1.2.3.4
 ```
 
+Если key-based доступ ещё не настроен, установщик сам попытается:
+
+1. сделать `apt update -y` перед SSH-настройкой,
+2. создать локальный ключ (если его нет),
+3. создать `.pub` из приватного ключа (если `.pub` отсутствует),
+4. выполнить `ssh-copy-id` на удалённый сервер.
+
+Если видите ошибку `ssh-copy-id: ERROR: No identities found`, это значит, что локальные SSH-ключи отсутствуют.
+Создайте ключ через `ssh-keygen`, затем повторите `ssh-copy-id` с `-i /path/to/key.pub`.
+
+Если приватный ключ уже есть, но нет `.pub`, сгенерируйте публичный ключ:
+
+```bash
+ssh-keygen -y -f /root/.ssh/id_ed25519 > /root/.ssh/id_ed25519.pub
+```
+
 Если видите ошибку `ssh-copy-id: ERROR: No identities found`, это значит, что локальные SSH-ключи отсутствуют.
 Создайте ключ через `ssh-keygen`, затем повторите `ssh-copy-id` с `-i /path/to/key.pub`.
 
