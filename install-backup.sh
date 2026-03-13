@@ -54,13 +54,30 @@ build_ssh_options() {
   fi
 }
 
+print_ssh_setup_hint() {
+  local ssh_user_host="${REMOTE_USER}@${REMOTE_HOST}"
+
+  if [[ -n "${SSH_KEY_PATH}" ]]; then
+    local public_key_path="${SSH_KEY_PATH}.pub"
+
+    error "Проверьте наличие ключей: ${SSH_KEY_PATH} и ${public_key_path}"
+    error "Если ключа нет, создайте его: ssh-keygen -t ed25519 -f ${SSH_KEY_PATH} -N \"\""
+    error "Затем загрузите ключ на удалённый сервер: ssh-copy-id -i ${public_key_path} -p ${REMOTE_PORT} ${ssh_user_host}"
+    return
+  fi
+
+  error "Похоже, локальный SSH-ключ ещё не создан (ошибка ssh-copy-id: No identities found)."
+  error "Создайте ключ: ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N \"\""
+  error "Загрузите его на удалённый сервер: ssh-copy-id -i ~/.ssh/id_ed25519.pub -p ${REMOTE_PORT} ${ssh_user_host}"
+}
+
 verify_ssh_access() {
   log "Проверяю SSH-доступ к ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PORT}"
 
   if ! ssh -o BatchMode=yes "${SSH_OPTIONS[@]}" "${REMOTE_USER}@${REMOTE_HOST}" "true"; then
     error "Не удалось подключиться по SSH без пароля."
     error "Для автозагрузки бэкапов нужен key-based доступ (без ввода пароля)."
-    error "Подсказка: ssh-copy-id -p ${REMOTE_PORT} ${REMOTE_USER}@${REMOTE_HOST}"
+    print_ssh_setup_hint
     exit 1
   fi
 
