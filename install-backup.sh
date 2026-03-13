@@ -56,19 +56,43 @@ build_ssh_options() {
 
 print_ssh_setup_hint() {
   local ssh_user_host="${REMOTE_USER}@${REMOTE_HOST}"
+  local private_key_path="${SSH_KEY_PATH}"
+  local public_key_path=""
 
-  if [[ -n "${SSH_KEY_PATH}" ]]; then
-    local public_key_path="${SSH_KEY_PATH}.pub"
+  if [[ -z "${private_key_path}" ]]; then
+    for candidate in "$HOME/.ssh/id_ed25519" "$HOME/.ssh/id_rsa" "$HOME/.ssh/id_ecdsa"; do
+      if [[ -f "${candidate}" ]]; then
+        private_key_path="${candidate}"
+        break
+      fi
+    done
+  fi
 
-    error "Проверьте наличие ключей: ${SSH_KEY_PATH} и ${public_key_path}"
-    error "Если ключа нет, создайте его: ssh-keygen -t ed25519 -f ${SSH_KEY_PATH} -N \"\""
-    error "Затем загрузите ключ на удалённый сервер: ssh-copy-id -i ${public_key_path} -p ${REMOTE_PORT} ${ssh_user_host}"
+  if [[ -n "${private_key_path}" ]]; then
+    public_key_path="${private_key_path}.pub"
+
+    if [[ ! -f "${private_key_path}" ]]; then
+      error "Приватный ключ не найден: ${private_key_path}"
+      error "Создайте ключ: ssh-keygen -t ed25519 -f ${private_key_path} -N \"\""
+      error "После этого загрузите ключ: ssh-copy-id -i ${public_key_path} -p ${REMOTE_PORT} ${ssh_user_host}"
+      return
+    fi
+
+    if [[ ! -f "${public_key_path}" ]]; then
+      error "Публичный ключ не найден: ${public_key_path}"
+      error "Сгенерируйте public key из приватного: ssh-keygen -y -f ${private_key_path} > ${public_key_path}"
+      error "После этого загрузите ключ: ssh-copy-id -i ${public_key_path} -p ${REMOTE_PORT} ${ssh_user_host}"
+      return
+    fi
+
+    error "Найден локальный ключ: ${private_key_path}"
+    error "Добавьте ключ на удалённый сервер: ssh-copy-id -i ${public_key_path} -p ${REMOTE_PORT} ${ssh_user_host}"
     return
   fi
 
-  error "Похоже, локальный SSH-ключ ещё не создан (ошибка ssh-copy-id: No identities found)."
-  error "Создайте ключ: ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N \"\""
-  error "Загрузите его на удалённый сервер: ssh-copy-id -i ~/.ssh/id_ed25519.pub -p ${REMOTE_PORT} ${ssh_user_host}"
+  error "Локальные SSH-ключи не найдены (возможна ошибка ssh-copy-id: No identities found)."
+  error "Создайте ключ: ssh-keygen -t ed25519 -f $HOME/.ssh/id_ed25519 -N \"\""
+  error "Загрузите его на удалённый сервер: ssh-copy-id -i $HOME/.ssh/id_ed25519.pub -p ${REMOTE_PORT} ${ssh_user_host}"
 }
 
 verify_ssh_access() {
