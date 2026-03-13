@@ -50,6 +50,32 @@ SSH_KEY_PATH=/root/.ssh/id_ed25519
 
 ---
 
+
+## Быстрый перенос готового архива между серверами
+
+Если вы запускаете скрипт **прямо на резервном сервере** (где поднимаете ноду), можно в **одну команду** скачать архив с backup-сервера и сразу распаковать локально:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/GRTUBORG/backup/refs/heads/master/transfer-backup.sh | \
+sudo SOURCE_USER=root \
+SOURCE_HOST=10.10.10.10 \
+SOURCE_ARCHIVE_PATH=/root/node_backups/node_backup_2026-03-12_01-00-00.zip \
+DEST_DIR=/root/node \
+SOURCE_PORT=22 \
+bash
+```
+
+Опциональные параметры:
+
+* `SOURCE_SSH_KEY_PATH` — приватный ключ для доступа к backup-серверу.
+* `EXTRACT_SUBDIR` — подпапка внутри `DEST_DIR`, куда распаковывать архив.
+* `KEEP_LOCAL_ARCHIVE` — оставить локально скачанный архив (`true`, по умолчанию) или удалить после распаковки (`false`).
+* `LOCAL_ARCHIVE_DIR` — локальная папка, куда сначала скачивается архив.
+
+Поддерживаемые форматы архива: `.zip`, `.tar.gz`, `.tgz`, `.tar`.
+
+---
+
 ## Классическая установка через `.env`
 
 Клонируйте репозиторий:
